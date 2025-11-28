@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Activity, Droplet, Flame, Moon, User, Settings, 
-  Watch, TrendingUp, Award, Zap, MessageSquare, LogOut, CheckCircle, Scale, Plus, Trash2, Save, Target, Check
+  Watch, TrendingUp, Award, Zap, MessageSquare, LogOut, CheckCircle, Scale, Plus, Trash2, Save, Target, Check, RotateCcw
 } from 'lucide-react';
 import { AppView, UserProfile, Gender, ActivityLevel, DailyStats, AIAdvice, Meal, Task } from './types';
 import { getHealthInsights, getChatResponse } from './services/geminiService';
+import { loadAppData, saveAppData, clearAppData, DEFAULT_DATA } from './services/storageService';
 import { ActivityChart, CaloriesChart, MacroChart, WeightChart, SleepChart } from './components/Charts';
 
 // --- Helper Components ---
@@ -119,8 +120,18 @@ const calculateHealthMetrics = (profile: UserProfile): UserProfile => {
 };
 
 const App = () => {
+  // Initialize state from local storage (lazy initialization)
+  const [initialData] = useState(() => loadAppData());
+
   // --- State ---
-  const [view, setView] = useState<AppView>(AppView.Auth);
+  // If logged in and not in Auth/Onboarding, restore previous view, otherwise default to Auth
+  const [view, setView] = useState<AppView>(() => {
+    if (initialData.isLoggedIn && initialData.view !== AppView.Auth && initialData.view !== AppView.Onboarding) {
+        return initialData.view;
+    }
+    return AppView.Auth;
+  });
+
   const [loading, setLoading] = useState(false);
   
   // Auth State
@@ -128,41 +139,11 @@ const App = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // User Data
-  const [userProfile, setUserProfile] = useState<UserProfile>({
-    name: 'Guest User',
-    age: 25,
-    height: 175,
-    weight: 70,
-    gender: Gender.Male,
-    activityLevel: ActivityLevel.ModeratelyActive,
-    bmi: 0,
-    bmr: 0,
-    dailyCalories: 0
-  });
-
-  const [dailyStats, setDailyStats] = useState<DailyStats>({
-    steps: 6500,
-    stepsGoal: 10000,
-    waterIntake: 4,
-    waterGoal: 8,
-    caloriesBurned: 450,
-    caloriesConsumed: 0,
-    sleepHours: 7.2,
-    activeMinutes: 45
-  });
-
-  const [meals, setMeals] = useState<Meal[]>([
-    { id: '1', name: 'Oatmeal & Berries', calories: 350, protein: 12, time: '08:00 AM' },
-    { id: '2', name: 'Grilled Chicken Salad', calories: 450, protein: 40, time: '12:30 PM' }
-  ]);
-
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: '1', text: 'Drink 500ml Water', completed: false, xp: 50 },
-    { id: '2', text: 'Walk 2000 steps', completed: false, xp: 100 },
-    { id: '3', text: 'Stretching 5 min', completed: false, xp: 50 },
-    { id: '4', text: 'No sugar for 6 hours', completed: false, xp: 75 }
-  ]);
+  // User Data - populated from initialData
+  const [userProfile, setUserProfile] = useState<UserProfile>(initialData.userProfile);
+  const [dailyStats, setDailyStats] = useState<DailyStats>(initialData.dailyStats);
+  const [meals, setMeals] = useState<Meal[]>(initialData.meals);
+  const [tasks, setTasks] = useState<Task[]>(initialData.tasks);
 
   // AI & Chat
   const [aiAdvice, setAiAdvice] = useState<AIAdvice | null>(null);
@@ -181,6 +162,19 @@ const App = () => {
 
   // --- Effects ---
 
+  // Persistence Effect: Save data whenever it changes
+  useEffect(() => {
+    const isLoggedIn = view !== AppView.Auth && view !== AppView.Onboarding;
+    saveAppData({
+      userProfile,
+      dailyStats,
+      meals,
+      tasks,
+      view,
+      isLoggedIn
+    });
+  }, [userProfile, dailyStats, meals, tasks, view]);
+
   useEffect(() => {
     // Recalculate total calories consumed whenever meals change
     const totalCalories = meals.reduce((sum, meal) => sum + meal.calories, 0);
@@ -193,6 +187,18 @@ const App = () => {
     e.preventDefault();
     if (email && password) {
       setView(AppView.Onboarding);
+    }
+  };
+
+  const handleLogout = () => {
+    setView(AppView.Auth);
+    // State effect will automatically save isLoggedIn: false
+  };
+
+  const handleResetData = () => {
+    if (window.confirm("Are you sure you want to reset all data? This cannot be undone.")) {
+      clearAppData();
+      window.location.reload();
     }
   };
 
@@ -687,20 +693,25 @@ const App = () => {
         </FeatureCard>
 
         <div className="mt-6 bg-gray-800 p-6 rounded-2xl border border-gray-700">
-          <h3 className="text-lg font-semibold text-white mb-6">App Preferences</h3>
+          <h3 className="text-lg font-semibold text-white mb-6">Data Management</h3>
           
-          <div className="space-y-6">
-             <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
+          <div className="space-y-4">
+             <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-xl border border-gray-700">
                 <div className="flex items-center gap-3">
-                   <div className="bg-brand-500/20 text-brand-500 p-2 rounded-lg">
-                      <Moon size={20} />
+                   <div className="bg-red-500/20 text-red-500 p-2 rounded-lg">
+                      <RotateCcw size={20} />
                    </div>
                    <div>
-                      <p className="font-medium text-white">Dark Mode</p>
-                      <p className="text-xs text-gray-400">System default</p>
+                      <p className="font-medium text-white">Reset Application Data</p>
+                      <p className="text-xs text-gray-400">Clear all saved profiles, meals, and settings.</p>
                    </div>
                 </div>
-                <div className="w-11 h-6 bg-brand-600 rounded-full flex items-center justify-end px-1"><div className="w-5 h-5 bg-white rounded-full"></div></div>
+                <button 
+                  onClick={handleResetData}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors"
+                >
+                  Reset Data
+                </button>
              </div>
           </div>
         </div>
@@ -746,7 +757,7 @@ const App = () => {
           </div>
         </nav>
         <div className="p-4 border-t border-gray-700">
-           <div className="flex items-center gap-3 p-3 text-red-400 cursor-pointer hover:bg-red-500/10 rounded-xl" onClick={() => setView(AppView.Auth)}>
+           <div className="flex items-center gap-3 p-3 text-red-400 cursor-pointer hover:bg-red-500/10 rounded-xl" onClick={handleLogout}>
              <LogOut size={20} />
              <span>Sign Out</span>
            </div>
